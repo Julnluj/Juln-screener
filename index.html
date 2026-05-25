@@ -270,12 +270,14 @@ async function fetchOkxTickers() {
   return (j.data||[])
     .filter(d=>d.instId.endsWith('-USDT-SWAP'))
     .map(d=>{
-      const price=+d.last, high=+d.high24h, low=+d.low24h;
+      const price=+d.last, open24h=+d.open24h, high=+d.high24h, low=+d.low24h;
       const natr = price>0?(high-low)/price*100:0;
+      // change = (last - open24h) / open24h * 100
+      const change = open24h>0 ? (price-open24h)/open24h*100 : 0;
       return {
         symbol: d.instId.replace('-USDT-SWAP',''),
-        price, change:+d.sodUtc8*(100),
-        volume:+d.volCcy24h||+d.vol24h/1e6,
+        price, change:+change.toFixed(2),
+        volume:+d.volCcy24h>0?+d.volCcy24h:+d.vol24h*price/1e6,
         natr:+natr.toFixed(2),
         trades:0,
         high, low, exchange:'OK-F'
@@ -472,17 +474,53 @@ function setSort(key) {
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────
+let isDragging=false, dragAction=null; // dragAction: 'add' | 'remove'
+
 function renderList() {
   document.getElementById('coin-list').innerHTML=filteredCoins.slice(0,300).map(c=>{
     const sel=selectedCoins.includes(c.symbol)?'selected':'';
     const cls=c.change>=0?'up':'dn';
-    return `<div class="coin-row ${sel}" id="row-${c.symbol}" onclick="selectCoin('${c.symbol}')">
+    return `<div class="coin-row ${sel}" id="row-${c.symbol}"
+      onmousedown="startDrag(event,'${c.symbol}')"
+      onmouseenter="onDragEnter('${c.symbol}')"
+      onclick="selectCoin('${c.symbol}')">
       <div><div class="coin-name">${c.symbol}</div><div class="coin-exch">${c.exchange}</div></div>
       <div class="val ${cls}" id="row-chg-${c.symbol}">${c.change>=0?'+':''}${c.change.toFixed(1)}%</div>
       <div class="val"><span class="natr-badge">${c.natr.toFixed(1)}</span></div>
       <div class="val muted">${fmtVol(c.volume)}</div>
     </div>`;
   }).join('');
+}
+
+function startDrag(e, symbol) {
+  if (e.button!==0) return;
+  isDragging=true;
+  dragAction=selectedCoins.includes(symbol)?'remove':'add';
+  // don't toggle here — click handles single tap
+  document.addEventListener('mouseup', stopDrag, {once:true});
+  e.preventDefault(); // prevent text selection
+}
+
+function onDragEnter(symbol) {
+  if (!isDragging) return;
+  const maxSlots=gridCols*gridRows;
+  if (dragAction==='add' && !selectedCoins.includes(symbol)) {
+    if (selectedCoins.length>=maxSlots) selectedCoins.shift();
+    selectedCoins.push(symbol);
+    const row=document.getElementById('row-'+symbol);
+    if (row) row.classList.add('selected');
+    renderCharts();
+  } else if (dragAction==='remove' && selectedCoins.includes(symbol)) {
+    selectedCoins=selectedCoins.filter(s=>s!==symbol);
+    const row=document.getElementById('row-'+symbol);
+    if (row) row.classList.remove('selected');
+    renderCharts();
+  }
+}
+
+function stopDrag() {
+  isDragging=false;
+  dragAction=null;
 }
 
 function selectCoin(symbol) {
