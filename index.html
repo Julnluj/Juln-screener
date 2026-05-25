@@ -69,6 +69,11 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'J
 .ind-gray { background:#64748b18; color:#94a3b8; border:1px solid #64748b33; }
 .ind-purple { background:#6366f118; color:#a5b4fc; border:1px solid #6366f133; }
 .chart-body { flex:1; position:relative; min-height:0; }
+.fs-toolbar { padding:6px 10px; border-bottom:1px solid var(--border); background:var(--bg2); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.tool-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:inherit; transition:all .15s; display:flex; align-items:center; gap:4px; }
+.tool-btn:hover { border-color:var(--accent); color:var(--text); }
+.tool-btn.active { background:#6366f122; border-color:var(--accent); color:var(--accent); }
+.tool-btn.danger:hover { border-color:var(--red); color:var(--red); }
 .fullscreen-overlay { display:none; position:fixed; inset:0; background:#0d0f1488; z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
 .fullscreen-overlay.open { display:flex; }
 .fs-popup { width:calc(100vw - 80px); height:calc(100vh - 80px); background:var(--bg2); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 24px 80px #00000088; }
@@ -174,6 +179,25 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'J
     <button class="close-btn" onclick="closeFullscreen()">✕ Закрыть</button>
   </div>
   <div class="fs-indicators" id="fs-indicators"></div>
+  <div class="fs-toolbar">
+    <span class="tb-label">ТФ:</span>
+    <button class="tool-btn" id="fs-tf-1m" onclick="setFsTf('1m')">1м</button>
+    <button class="tool-btn" id="fs-tf-5m" onclick="setFsTf('5m')">5м</button>
+    <button class="tool-btn" id="fs-tf-15m" onclick="setFsTf('15m')">15м</button>
+    <button class="tool-btn" id="fs-tf-1h" onclick="setFsTf('1h')">1ч</button>
+    <button class="tool-btn" id="fs-tf-4h" onclick="setFsTf('4h')">4ч</button>
+    <button class="tool-btn" id="fs-tf-1d" onclick="setFsTf('1d')">1д</button>
+    <button class="tool-btn" id="fs-tf-1w" onclick="setFsTf('1w')">1н</button>
+    <div class="tb-sep"></div>
+    <span class="tb-label">ИНСТР:</span>
+    <button class="tool-btn" id="tool-none" onclick="setTool('none')">✦ Курсор</button>
+    <button class="tool-btn" id="tool-hline" onclick="setTool('hline')">— Уровень</button>
+    <button class="tool-btn" id="tool-ray" onclick="setTool('ray')">↗ Луч</button>
+    <button class="tool-btn" id="tool-segment" onclick="setTool('segment')">╱ Сегмент</button>
+    <button class="tool-btn" id="tool-channel" onclick="setTool('channel')">⫴ Канал</button>
+    <div class="tb-sep"></div>
+    <button class="tool-btn danger" onclick="clearDrawings()">🗑 Очистить</button>
+  </div>
   <div class="fs-body" id="fs-body"></div>
   </div>
 </div>
@@ -203,10 +227,12 @@ function okxTf(tf) { return {'1m':'1m','5m':'5m','15m':'15m','1h':'1H','4h':'4H'
 // ── STATE ─────────────────────────────────────────────────────────────
 let allCoins=[], filteredCoins=[], selectedCoins=[];
 let currentTf='1m', gridCols=3, gridRows=3;
-let sortKey='volume', sortDir=-1, searchQ='';
+let sortKey='natr', sortDir=-1, searchQ='';
 let currentExchange='BY';
 let chartInstances={};
-let fsChart=null, fsSymbol=null;
+let fsChart=null, fsSymbol=null, fsTf='1m';
+let activeTool='none';
+let drawings={}; // symbol -> array of line objects
 let ws=null, wsReconnectTimer=null;
 let priceMap={}; // symbol -> latest price data
 
@@ -405,10 +431,12 @@ function setWsStatus(state) {
 // ── FILTERS ───────────────────────────────────────────────────────────
 function applyFilters() {
   let coins = [...allCoins];
+  // минимальный объём 500к$ (0.5M)
+  coins = coins.filter(c=>c.volume >= 0.5);
   if (searchQ) coins=coins.filter(c=>c.symbol.includes(searchQ.toUpperCase()));
-  const volMin=getNum('vol-min')??getNum('tb-vol'), volMax=getNum('vol-max');
-  const natrMin=getNum('natr-min')??getNum('tb-natr'), natrMax=getNum('natr-max');
-  const chgMin=getNum('chg-min')??getNum('tb-chg'), chgMax=getNum('chg-max');
+  const volMin=getNum('vol-min'), volMax=getNum('vol-max');
+  const natrMin=getNum('natr-min'), natrMax=getNum('natr-max');
+  const chgMin=getNum('chg-min'), chgMax=getNum('chg-max');
   if (volMin!=null) coins=coins.filter(c=>c.volume>=volMin);
   if (volMax!=null) coins=coins.filter(c=>c.volume<=volMax);
   if (natrMin!=null) coins=coins.filter(c=>c.natr>=natrMin);
@@ -419,16 +447,15 @@ function applyFilters() {
   filteredCoins=coins;
   document.getElementById('coin-count').textContent=coins.length;
   renderList();
+  // графики всегда показывают топ монет по текущей сортировке
   const maxSlots=gridCols*gridRows;
-  if (selectedCoins.length===0 && coins.length>0) selectedCoins=coins.slice(0,maxSlots).map(c=>c.symbol);
+  selectedCoins=coins.slice(0,maxSlots).map(c=>c.symbol);
   renderCharts();
 }
 
 function setSort(key) {
   if (sortKey===key) sortDir*=-1; else { sortKey=key; sortDir=-1; }
-  // update sidebar column headers
   ['symbol','change','natr','volume'].forEach(k=>{ const el=document.getElementById('sort-'+k); if(el) el.textContent=k===sortKey?(sortDir>0?'▲':'▼'):''; });
-  // update toolbar sort buttons
   ['volume','natr','change'].forEach(k=>{
     const btn=document.getElementById('sort-btn-'+k);
     if (!btn) return;
@@ -436,7 +463,12 @@ function setSort(key) {
     btn.textContent = labels[k]+(k===sortKey?(sortDir>0?' ↑':' ↓'):'  ↓');
     btn.classList.toggle('active', k===sortKey);
   });
-  applyFilters();
+  // пересортировать и перерисовать графики
+  filteredCoins.sort((a,b)=>{ const av=a[sortKey],bv=b[sortKey]; return typeof av==='string'?sortDir*av.localeCompare(bv):sortDir*(bv-av); });
+  const maxSlots=gridCols*gridRows;
+  selectedCoins=filteredCoins.slice(0,maxSlots).map(c=>c.symbol);
+  renderList();
+  renderCharts();
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────
@@ -574,21 +606,28 @@ async function renderCharts() {
 // ── FULLSCREEN ────────────────────────────────────────────────────────
 async function openFullscreen(symbol) {
   fsSymbol=symbol;
+  fsTf=currentTf;
   const coin=allCoins.find(c=>c.symbol===symbol)||{};
   document.getElementById('fs-overlay').classList.add('open');
   document.getElementById('fs-ticker').textContent=symbol;
-  document.getElementById('fs-meta').textContent=`${coin.exchange||''} · ${currentTf}`;
+  document.getElementById('fs-meta').textContent=`${coin.exchange||''} · ${fsTf}`;
   const cls=(coin.change||0)>=0?'up':'dn';
   document.getElementById('fs-price').className='chart-price '+cls;
   document.getElementById('fs-price').textContent='$'+fmtPrice(coin.price||0);
   document.getElementById('fs-change').className=cls;
   document.getElementById('fs-change').textContent=((coin.change||0)>=0?'+':'')+(coin.change||0).toFixed(2)+'%';
   document.getElementById('fs-indicators').innerHTML=buildIndicators(coin,true);
+  // sync tf buttons
+  document.querySelectorAll('[id^="fs-tf-"]').forEach(b=>b.classList.remove('active'));
+  const tfBtn=document.getElementById('fs-tf-'+fsTf);
+  if(tfBtn) tfBtn.classList.add('active');
+  // reset tool
+  setTool('none');
   const fsBody=document.getElementById('fs-body');
   fsBody.innerHTML='';
   if (fsChart) { try{fsChart.chart.remove();}catch(e){} fsChart=null; }
   fsChart=setupChart(fsBody, fsBody.clientWidth||(window.innerWidth-80), fsBody.clientHeight||(window.innerHeight-200));
-  const klines=await fetchKlines(symbol, currentTf, 300);
+  const klines=await fetchKlines(symbol, fsTf, 300);
   setKlines(fsChart, klines);
 }
 
@@ -598,6 +637,43 @@ function closeFullscreen() {
 }
 document.getElementById('fs-overlay').addEventListener('click', e=>{ if(e.target===document.getElementById('fs-overlay')) closeFullscreen(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeFullscreen(); });
+
+// ── FS TIMEFRAME ──────────────────────────────────────────────────────
+function setFsTf(tf) {
+  fsTf=tf;
+  document.querySelectorAll('[id^="fs-tf-"]').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('fs-tf-'+tf);
+  if(btn) btn.classList.add('active');
+  if (fsSymbol) reloadFsChart();
+}
+
+async function reloadFsChart() {
+  if (!fsChart || !fsSymbol) return;
+  const klines=await fetchKlines(fsSymbol, fsTf, 300);
+  setKlines(fsChart, klines);
+  document.getElementById('fs-meta').textContent=`${(allCoins.find(c=>c.symbol===fsSymbol)||{}).exchange||''} · ${fsTf}`;
+}
+
+// ── DRAWING TOOLS ─────────────────────────────────────────────────────
+let drawingStart=null;
+let activeLine=null;
+
+function setTool(tool) {
+  activeTool=tool;
+  document.querySelectorAll('[id^="tool-"]').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('tool-'+tool);
+  if(btn) btn.classList.add('active');
+  const fsBody=document.getElementById('fs-body');
+  fsBody.style.cursor = tool==='none'?'default':'crosshair';
+}
+
+function clearDrawings() {
+  if (!fsSymbol || !fsChart) return;
+  if (drawings[fsSymbol]) {
+    drawings[fsSymbol].forEach(d=>{ try{ fsChart.chart.removeSeries(d); }catch(e){} });
+    drawings[fsSymbol]=[];
+  }
+}
 
 // ── CONTROLS ──────────────────────────────────────────────────────────
 function setExchange(ex) {
@@ -640,8 +716,11 @@ document.getElementById('search').addEventListener('input', e=>{ searchQ=e.targe
 
 // ── INIT ──────────────────────────────────────────────────────────────
 setGrid(3,3);
+// дефолтная сортировка по NATR
+document.getElementById('sort-btn-natr').classList.add('active');
+document.getElementById('sort-btn-natr').textContent='NATR ↓';
 loadTickers();
-setInterval(()=>{ if (!ws || ws.readyState!==1) return; /* WS keeps data fresh */ else loadTickers(); }, 60000);
+setInterval(()=>{ loadTickers(); }, 60000);
 </script>
 </body>
 </html>
