@@ -154,8 +154,8 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'J
       <button class="btn active" id="grid-3" onclick="setGrid(3,3)">3×3</button>
       <div class="tb-sep"></div>
       <span class="tb-label">СОРТ:</span>
+      <button class="btn active" id="sort-btn-natr" onclick="setSort('natr')">NATR ↓</button>
       <button class="btn" id="sort-btn-volume" onclick="setSort('volume')">ОБЪ ↓</button>
-      <button class="btn" id="sort-btn-natr" onclick="setSort('natr')">NATR ↓</button>
       <button class="btn" id="sort-btn-change" onclick="setSort('change')">ИЗМ ↓</button>
     </div>
     <div class="charts-area" id="charts-area"></div>
@@ -707,15 +707,16 @@ function setTool(tool) {
   document.querySelectorAll('[id^="tool-"]').forEach(b=>b.classList.remove('active'));
   const btn=document.getElementById('tool-'+tool);
   if(btn) btn.classList.add('active');
-  const fsBody=document.getElementById('fs-body');
-  if (drawCanvas) drawCanvas.style.cursor = tool==='none'?'default':'crosshair';
+  if (drawCanvas) {
+    drawCanvas.style.pointerEvents = tool==='none' ? 'none' : 'auto';
+    drawCanvas.style.cursor = tool==='none' ? 'default' : 'crosshair';
+  }
 }
 
 function initDrawCanvas() {
   const fsBody=document.getElementById('fs-body');
-  // remove old
   const old=document.getElementById('draw-canvas');
-  if(old) old.remove();
+  if(old) { old.removeEventListener('mousedown', onDrawMouseDown); old.removeEventListener('mousemove', onDrawMouseMove); old.removeEventListener('mouseup', onDrawMouseUp); old.removeEventListener('contextmenu', onDrawRightClick); old.remove(); }
   drawCanvas=document.createElement('canvas');
   drawCanvas.id='draw-canvas';
   drawCanvas.style.cssText='position:absolute;inset:0;width:100%;height:100%;z-index:10;pointer-events:none;';
@@ -724,14 +725,10 @@ function initDrawCanvas() {
   fsBody.style.position='relative';
   fsBody.appendChild(drawCanvas);
   drawCtx=drawCanvas.getContext('2d');
-
-  // enable pointer events only when tool active
-  drawCanvas.style.pointerEvents='none';
-
-  // listen on fsBody
-  fsBody.addEventListener('mousedown', onDrawMouseDown);
-  fsBody.addEventListener('mousemove', onDrawMouseMove);
-  fsBody.addEventListener('mouseup', onDrawMouseUp);
+  drawCanvas.addEventListener('mousedown', onDrawMouseDown);
+  drawCanvas.addEventListener('mousemove', onDrawMouseMove);
+  drawCanvas.addEventListener('mouseup', onDrawMouseUp);
+  drawCanvas.addEventListener('contextmenu', onDrawRightClick);
 }
 
 function getCanvasPos(e) {
@@ -742,48 +739,84 @@ function getCanvasPos(e) {
 
 function canvasPosToPrice(y) {
   if(!fsChart) return 0;
-  try { return fsChart.chart.priceScale('right').coordinateToPrice(y); } catch(e){ return 0; }
+  try {
+    // use the canvas element's actual bounding rect vs the chart container
+    const chartEl = document.getElementById('fs-body').querySelector('div');
+    if(!chartEl) return 0;
+    const chartRect = chartEl.getBoundingClientRect();
+    const canvasRect = drawCanvas.getBoundingClientRect();
+    // y relative to chart container
+    const chartY = y + (canvasRect.top - chartRect.top);
+    return fsChart.chart.priceScale('right').coordinateToPrice(chartY) || 0;
+  } catch(e){ return 0; }
 }
 
 function onDrawMouseDown(e) {
   if(activeTool==='none') return;
   if(e.button!==0) return;
-  drawCanvas.style.pointerEvents='auto';
   const pos=getCanvasPos(e);
-  drawingStart={x:pos.x, y:pos.y, price:canvasPosToPrice(pos.y)};
+  const price=canvasPosToPrice(pos.y);
+  drawingStart={x:pos.x, y:pos.y, price};
   drawingInProgress=true;
+  e.preventDefault();
   e.stopPropagation();
 }
 
 function onDrawMouseMove(e) {
-  if(!drawingInProgress || !drawingStart) return;
+  if(!drawingStart) return;
   const pos=getCanvasPos(e);
   redrawAll();
-  drawPreview(drawingStart, pos);
+  if(drawingInProgress) drawPreview(drawingStart, pos);
   e.stopPropagation();
 }
 
 function onDrawMouseUp(e) {
   if(!drawingInProgress || !drawingStart) return;
   const pos=getCanvasPos(e);
-  const endPrice=canvasPosToPrice(pos.y);
-
+  const price2=canvasPosToPrice(pos.y);
   if(!drawings[fsSymbol]) drawings[fsSymbol]=[];
-
+  // single click (small movement) still saves for hline/ruler at click point
   const dist=Math.sqrt(Math.pow(pos.x-drawingStart.x,2)+Math.pow(pos.y-drawingStart.y,2));
-  if(dist>5) { // ignore tiny clicks
-    drawings[fsSymbol].push({
-      type:activeTool,
-      x1:drawingStart.x, y1:drawingStart.y,
-      x2:pos.x, y2:pos.y,
-      price1:drawingStart.price,
-      price2:endPrice
-    });
-  }
+  const endX = dist < 5 ? drawingStart.x+80 : pos.x;
+  const endY = dist < 5 ? drawingStart.y : pos.y;
+  const endPrice = dist < 5 ? drawingStart.price : price2;
+  drawings[fsSymbol].push({
+    type:activeTool,
+    x1:drawingStart.x, y1:drawingStart.y,
+    x2:endX, y2:endY,
+    price1:drawingStart.price,
+    price2:endPrice
+  });
   drawingInProgress=false;
   drawingStart=null;
-  drawCanvas.style.pointerEvents='none';
   redrawAll();
+  e.stopPropagation();
+}
+
+function onDrawRightClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if(!drawings[fsSymbol]||!drawings[fsSymbol].length) return;
+  const pos=getCanvasPos(e);
+  // find closest drawing to click
+  let minDist=20, minIdx=-1;
+  drawings[fsSymbol].forEach((d,i)=>{
+    const dist=distToShape(d, pos.x, pos.y);
+    if(dist<minDist){ minDist=dist; minIdx=i; }
+  });
+  if(minIdx>=0) {
+    drawings[fsSymbol].splice(minIdx,1);
+    redrawAll();
+  }
+}
+
+function distToShape(d, mx, my) {
+  // distance from point to line segment
+  const dx=d.x2-d.x1, dy=d.y2-d.y1;
+  const len=Math.sqrt(dx*dx+dy*dy)||1;
+  const t=Math.max(0,Math.min(1,((mx-d.x1)*dx+(my-d.y1)*dy)/(len*len)));
+  const px=d.x1+t*dx, py=d.y1+t*dy;
+  return Math.sqrt(Math.pow(mx-px,2)+Math.pow(my-py,2));
 }
 
 function drawPreview(start, end) {
