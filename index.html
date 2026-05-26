@@ -434,8 +434,8 @@ function setWsStatus(state) {
 // ── FILTERS ───────────────────────────────────────────────────────────
 function applyFilters() {
   let coins = [...allCoins];
-  // минимальный объём 500к$ (0.5M)
-  coins = coins.filter(c=>c.volume >= 0.5);
+  // минимальный объём 500к$ (0.5M) и минимальный NATR 0.1% (убираем стейблкоины)
+  coins = coins.filter(c=>c.volume >= 0.5 && c.natr >= 0.1);
   if (searchQ) coins=coins.filter(c=>c.symbol.includes(searchQ.toUpperCase()));
   const volMin=getNum('vol-min'), volMax=getNum('vol-max');
   const natrMin=getNum('natr-min'), natrMax=getNum('natr-max');
@@ -740,14 +740,15 @@ function getCanvasPos(e) {
 function canvasPosToPrice(y) {
   if(!fsChart) return 0;
   try {
-    // use the canvas element's actual bounding rect vs the chart container
-    const chartEl = document.getElementById('fs-body').querySelector('div');
-    if(!chartEl) return 0;
-    const chartRect = chartEl.getBoundingClientRect();
+    // Lightweight Charts v4: coordinateToPrice works relative to chart container top
+    const fsBody = document.getElementById('fs-body');
+    const bodyRect = fsBody.getBoundingClientRect();
     const canvasRect = drawCanvas.getBoundingClientRect();
-    // y relative to chart container
-    const chartY = y + (canvasRect.top - chartRect.top);
-    return fsChart.chart.priceScale('right').coordinateToPrice(chartY) || 0;
+    // offset between canvas top and fsBody top
+    const offsetY = canvasRect.top - bodyRect.top;
+    const chartY = y + offsetY;
+    const price = fsChart.candles.coordinateToPrice(chartY);
+    return price || 0;
   } catch(e){ return 0; }
 }
 
