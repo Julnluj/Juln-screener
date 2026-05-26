@@ -697,10 +697,253 @@ async function reloadFsChart() {
 }
 
 // ── DRAWING TOOLS ─────────────────────────────────────────────────────
-let drawingStart=null;
-let drawingInProgress=false;
 let drawCanvas=null, drawCtx=null;
-// drawings[symbol] = [{type, x1,y1,x2,y2, price1,price2, time1,time2}]
+let drawingStart=null;   // first click point {x,y,price}
+let mousePos={x:0,y:0}; // current mouse position for preview
+// drawings[symbol] = [{type, x1,y1,x2,y2, price1,price2}]
+
+function setTool(tool) {
+  activeTool=tool;
+  drawingStart=null; // cancel any in-progress drawing
+  document.querySelectorAll('[id^="tool-"]').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('tool-'+tool);
+  if(btn) btn.classList.add('active');
+  if(drawCanvas) {
+    drawCanvas.style.pointerEvents = tool==='none' ? 'none' : 'auto';
+    drawCanvas.style.cursor = tool==='none' ? 'default' : 'crosshair';
+  }
+  redrawAll();
+}
+
+function initDrawCanvas() {
+  const fsBody=document.getElementById('fs-body');
+  const old=document.getElementById('draw-canvas');
+  if(old) old.remove();
+  drawCanvas=document.createElement('canvas');
+  drawCanvas.id='draw-canvas';
+  drawCanvas.style.cssText='position:absolute;inset:0;width:100%;height:100%;z-index:10;pointer-events:none;';
+  drawCanvas.width=fsBody.clientWidth;
+  drawCanvas.height=fsBody.clientHeight;
+  fsBody.style.position='relative';
+  fsBody.appendChild(drawCanvas);
+  drawCtx=drawCanvas.getContext('2d');
+  drawCanvas.addEventListener('click', onDrawClick);
+  drawCanvas.addEventListener('mousemove', onDrawMouseMove);
+  drawCanvas.addEventListener('contextmenu', onDrawRightClick);
+}
+
+// Convert canvas Y coordinate to price using candle series
+function yToPrice(y) {
+  if(!fsChart) return 0;
+  try { return fsChart.candles.coordinateToPrice(y) || 0; } catch(e){ return 0; }
+}
+
+// Convert price to canvas Y
+function priceToY(price) {
+  if(!fsChart) return 0;
+  try { return fsChart.candles.priceToCoordinate(price) || 0; } catch(e){ return 0; }
+}
+
+function getCanvasPos(e) {
+  if(!drawCanvas) return {x:0,y:0};
+  const rect=drawCanvas.getBoundingClientRect();
+  return { x:e.clientX-rect.left, y:e.clientY-rect.top };
+}
+
+// CLICK: first click sets start, second click finalizes
+function onDrawClick(e) {
+  if(activeTool==='none') return;
+  e.preventDefault(); e.stopPropagation();
+  const pos=getCanvasPos(e);
+  const price=yToPrice(pos.y);
+
+  if(!drawingStart) {
+    // First click — set start point
+    drawingStart={x:pos.x, y:pos.y, price};
+  } else {
+    // Second click — finalize
+    if(!drawings[fsSymbol]) drawings[fsSymbol]=[];
+    drawings[fsSymbol].push({
+      type:activeTool,
+      x1:drawingStart.x, y1:drawingStart.y, price1:drawingStart.price,
+      x2:pos.x, y2:pos.y, price2:price
+    });
+    drawingStart=null;
+    redrawAll();
+  }
+}
+
+// MOUSEMOVE: show preview after first click
+function onDrawMouseMove(e) {
+  if(activeTool==='none') return;
+  const pos=getCanvasPos(e);
+  mousePos={x:pos.x, y:pos.y};
+  redrawAll();
+  // draw crosshair
+  drawCrosshair(pos.x, pos.y);
+  // draw preview if first point set
+  if(drawingStart) {
+    drawShape(drawCtx, activeTool, drawingStart.x, drawingStart.y, pos.x, pos.y, drawingStart.price, yToPrice(pos.y), true);
+  }
+}
+
+function drawCrosshair(x, y) {
+  if(!drawCtx||!drawCanvas) return;
+  const W=drawCanvas.width, H=drawCanvas.height;
+  drawCtx.save();
+  drawCtx.strokeStyle='#64748b55';
+  drawCtx.lineWidth=1;
+  drawCtx.setLineDash([3,3]);
+  drawCtx.beginPath(); drawCtx.moveTo(x,0); drawCtx.lineTo(x,H); drawCtx.stroke();
+  drawCtx.beginPath(); drawCtx.moveTo(0,y); drawCtx.lineTo(W,y); drawCtx.stroke();
+  // price label on right
+  const price=yToPrice(y);
+  if(price) {
+    const label=fmtPrice(price);
+    drawCtx.fillStyle='#1a1e28';
+    drawCtx.fillRect(W-60, y-9, 58, 16);
+    drawCtx.strokeStyle='#2a2f3d';
+    drawCtx.setLineDash([]);
+    drawCtx.strokeRect(W-60, y-9, 58, 16);
+    drawCtx.fillStyle='#e2e8f0';
+    drawCtx.font='10px monospace';
+    drawCtx.fillText(label, W-57, y+3);
+  }
+  drawCtx.restore();
+}
+
+// RIGHT CLICK: delete nearest drawing
+function onDrawRightClick(e) {
+  e.preventDefault(); e.stopPropagation();
+  if(drawingStart) { drawingStart=null; redrawAll(); return; } // cancel in-progress
+  if(!drawings[fsSymbol]||!drawings[fsSymbol].length) return;
+  const pos=getCanvasPos(e);
+  let minDist=25, minIdx=-1;
+  drawings[fsSymbol].forEach((d,i)=>{
+    const y1=priceToY(d.price1)||d.y1, y2=priceToY(d.price2)||d.y2;
+    const dist=distToLine(d.x1, y1, d.x2, y2, pos.x, pos.y, d.type);
+    if(dist<minDist){ minDist=dist; minIdx=i; }
+  });
+  if(minIdx>=0){ drawings[fsSymbol].splice(minIdx,1); redrawAll(); }
+}
+
+function distToLine(x1,y1,x2,y2, mx,my, type) {
+  if(type==='hline') return Math.abs(my-y1); // horizontal line
+  const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+  const t=Math.max(0,Math.min(1,((mx-x1)*dx+(my-y1)*dy)/(len*len)));
+  return Math.sqrt(Math.pow(mx-(x1+t*dx),2)+Math.pow(my-(y1+t*dy),2));
+}
+
+function redrawAll() {
+  if(!drawCtx||!drawCanvas) return;
+  drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+  (drawings[fsSymbol]||[]).forEach(d=>{
+    const y1=priceToY(d.price1)||d.y1;
+    const y2=priceToY(d.price2)||d.y2;
+    drawShape(drawCtx, d.type, d.x1, y1, d.x2, y2, d.price1, d.price2, false);
+  });
+}
+
+function drawShape(ctx, type, x1, y1, x2, y2, price1, price2, isPreview) {
+  ctx.save();
+  const alpha = isPreview ? '99' : 'ff';
+  const W=drawCanvas.width, H=drawCanvas.height;
+
+  if(type==='hline') {
+    // ── Horizontal Level ── TradingView style: full-width line + price label
+    ctx.strokeStyle='#2962ff'+alpha;
+    ctx.lineWidth=1.5;
+    ctx.setLineDash(isPreview?[5,3]:[]);
+    ctx.beginPath(); ctx.moveTo(0,y1); ctx.lineTo(W,y1); ctx.stroke();
+    // dot at click
+    ctx.fillStyle='#2962ff'+alpha;
+    ctx.beginPath(); ctx.arc(x1,y1,4,0,Math.PI*2); ctx.fill();
+    // price tag on right edge
+    const lbl=fmtPrice(price1);
+    ctx.fillStyle='#2962ff';
+    ctx.fillRect(W-58, y1-9, 56, 17);
+    ctx.fillStyle='#fff';
+    ctx.font='bold 10px monospace';
+    ctx.fillText(lbl, W-55, y1+3);
+
+  } else if(type==='segment') {
+    // ── Trend Line / Segment ──
+    ctx.strokeStyle='#2962ff'+alpha;
+    ctx.lineWidth=2;
+    ctx.setLineDash(isPreview?[5,3]:[]);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.setLineDash([]);
+    // endpoint dots
+    [x1,x2].forEach((x,i)=>{ const y=i===0?y1:y2; ctx.fillStyle='#2962ff'+alpha; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x,y,2,0,Math.PI*2); ctx.fill(); });
+
+  } else if(type==='ray') {
+    // ── Ray — extends to edge of chart ──
+    ctx.strokeStyle='#f7931a'+alpha;
+    ctx.lineWidth=2;
+    ctx.setLineDash(isPreview?[5,3]:[]);
+    const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+    // extend to canvas boundary
+    let t=3000/len;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1+dx*t, y1+dy*t); ctx.stroke();
+    ctx.setLineDash([]);
+    // start dot
+    ctx.fillStyle='#f7931a'+alpha;
+    ctx.beginPath(); ctx.arc(x1,y1,4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x1,y1,2,0,Math.PI*2); ctx.fill();
+
+  } else if(type==='channel') {
+    // ── Parallel Channel ──
+    ctx.strokeStyle='#9c27b0'+alpha;
+    ctx.lineWidth=1.5;
+    ctx.setLineDash(isPreview?[5,3]:[]);
+    const dy=y2-y1;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1,y1+dy); ctx.lineTo(x2,y2+dy); ctx.stroke();
+    ctx.setLineDash([]);
+    // fill
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x2,y2+dy); ctx.lineTo(x1,y1+dy); ctx.closePath();
+    ctx.fillStyle='#9c27b018'; ctx.fill();
+    // dots
+    [[x1,y1],[x2,y2],[x1,y1+dy],[x2,y2+dy]].forEach(([x,y])=>{ ctx.fillStyle='#9c27b0'+alpha; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); });
+
+  } else if(type==='ruler') {
+    // ── Measure / Ruler — TradingView style ──
+    const pct=(price1&&price2&&price1!==0)?((price2-price1)/Math.abs(price1)*100):0;
+    const color=pct>=0?'#22c55e':'#ef4444';
+    ctx.strokeStyle=color+alpha;
+    ctx.lineWidth=1;
+    ctx.setLineDash([4,3]);
+    // rectangle outline
+    ctx.beginPath(); ctx.rect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1)); ctx.stroke();
+    ctx.setLineDash([]);
+    // filled rectangle
+    ctx.fillStyle=color+'22'; ctx.fill();
+    // label in center
+    const lbl=`${pct>=0?'+':''}${pct.toFixed(2)}%`;
+    const cx=Math.min(x1,x2)+Math.abs(x2-x1)/2;
+    const cy=Math.min(y1,y2)+Math.abs(y2-y1)/2;
+    ctx.font='bold 12px monospace';
+    const tw=ctx.measureText(lbl).width;
+    ctx.fillStyle='#13161eee'; ctx.fillRect(cx-tw/2-5, cy-10, tw+10, 20);
+    ctx.fillStyle=color; ctx.fillText(lbl, cx-tw/2, cy+4);
+    // corner dots
+    [[x1,y1],[x2,y2]].forEach(([x,y])=>{ ctx.fillStyle=color+alpha; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); });
+  }
+  ctx.restore();
+}
+
+function clearDrawings() {
+  if(!fsSymbol) return;
+  drawings[fsSymbol]=[];
+  drawingStart=null;
+  if(drawCtx&&drawCanvas) drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+}
+
+function attachRedrawListener() {
+  if(!fsChart) return;
+  fsChart.chart.timeScale().subscribeVisibleTimeRangeChange(()=>redrawAll());
+  fsChart.chart.subscribeCrosshairMove(()=>{ if(!drawingStart) redrawAll(); });
+}
 
 function setTool(tool) {
   activeTool=tool;
@@ -956,7 +1199,7 @@ function clearDrawings() {
 function attachRedrawListener() {
   if(!fsChart) return;
   fsChart.chart.timeScale().subscribeVisibleTimeRangeChange(()=>redrawAll());
-  fsChart.chart.priceScale('right').applyOptions({});
+  fsChart.chart.subscribeCrosshairMove(()=>{ if(!drawingStart) redrawAll(); });
 }
 
 // ── CONTROLS ──────────────────────────────────────────────────────────
