@@ -325,30 +325,70 @@ async function fetchOkxTickers() {
     });
 }
 
+// ── ATR CALCULATION ───────────────────────────────────────────────────
+function calcATR(klines, period=14) {
+  if (klines.length < period+1) return null;
+  const trs = [];
+  for (let i=1; i<klines.length; i++) {
+    const high=klines[i].high, low=klines[i].low, prevClose=klines[i-1].close;
+    trs.push(Math.max(high-low, Math.abs(high-prevClose), Math.abs(low-prevClose)));
+  }
+  // Wilder smoothing
+  let atr = trs.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  for (let i=period; i<trs.length; i++) atr = (atr*(period-1)+trs[i])/period;
+  return atr;
+}
+
+let atrRefreshTimer=null;
+async function refreshATR() {
+  if (atrRefreshTimer) clearTimeout(atrRefreshTimer);
+  // take top-50 by current 24h natr
+  const top50 = [...allCoins]
+    .filter(c=>c.volume>=0.5 && c.natr>=0.1)
+    .sort((a,b)=>b.natr-a.natr)
+    .slice(0,50);
+
+  document.getElementById('status-text').textContent='Загрузка ATR...';
+
+  // fetch in batches of 10 with delay
+  for (let i=0; i<top50.length; i+=10) {
+    const batch = top50.slice(i,i+10);
+    await Promise.all(batch.map(async coin=>{
+      try {
+        const klines = await fetchKlines(coin.symbol, currentTf, 20);
+        const atr = calcATR(klines, 14);
+        if (atr && coin.price>0) {
+          coin.natr = +(atr/coin.price*100).toFixed(2);
+        }
+      } catch(e){}
+    }));
+    await new Promise(r=>setTimeout(r,150)); // delay between batches
+  }
+
+  document.getElementById('status-text').textContent=`${allCoins.length} монет · ${EXCHANGES[currentExchange]?.name||'Binance'} · ATR`;
+  // re-sort and re-render
+  applyFilters();
+
+  // schedule next refresh every 5 minutes
+  atrRefreshTimer = setTimeout(refreshATR, 5*60*1000);
+}
+
 async function loadTickers() {
   document.getElementById('status-text').textContent='Загрузка тикеров...';
   try {
     let coins;
     if (currentExchange==='BY') coins = await fetchBybitTickers();
     else if (currentExchange==='OK') coins = await fetchOkxTickers();
-    else { 
-      const coins = await fetchBinanceTickers();
-      allCoins = coins;
-      coins.forEach(c=>{ priceMap[c.symbol]={price:c.price, change:c.change}; });
-      document.getElementById('last-update').textContent = new Date().toLocaleTimeString('ru');
-      document.getElementById('status-text').textContent = `${coins.length} монет · Binance`;
-      applyFilters();
-      connectWebSocket();
-      return;
-    }
+    else coins = await fetchBinanceTickers();
 
     allCoins = coins;
-    // sync priceMap
     coins.forEach(c=>{ priceMap[c.symbol]={price:c.price, change:c.change}; });
     document.getElementById('last-update').textContent = new Date().toLocaleTimeString('ru');
-    document.getElementById('status-text').textContent = `${coins.length} монет · ${EXCHANGES[currentExchange]?.name}`;
+    document.getElementById('status-text').textContent = `${coins.length} монет · ${EXCHANGES[currentExchange]?.name||'Binance'}`;
     applyFilters();
     connectWebSocket();
+    // kick off ATR calculation in background
+    refreshATR();
   } catch(e) {
     console.error(e);
     document.getElementById('status-text').textContent='Ошибка: '+e.message;
@@ -1323,6 +1363,7 @@ function attachRedrawListener() {
 function setExchange(ex) {
   currentExchange=ex;
   if (ws) { try{ws.close();}catch(e){} ws=null; }
+  if (atrRefreshTimer) { clearTimeout(atrRefreshTimer); atrRefreshTimer=null; }
   ['BY','OK','BI'].forEach(x=>document.getElementById('ex-'+x).classList.remove('active'));
   document.getElementById('ex-'+ex).classList.add('active');
   selectedCoins=[];
@@ -1336,6 +1377,8 @@ function setTf(tf) {
   document.getElementById('tf-'+tf).classList.add('active');
   renderCharts();
   if (fsSymbol && document.getElementById('fs-overlay').classList.contains('open')) openFullscreen(fsSymbol);
+  // recalculate ATR for new timeframe
+  refreshATR();
 }
 
 function setGrid(cols,rows) {
