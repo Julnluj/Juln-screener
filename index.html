@@ -5,91 +5,96 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CryptoScreener</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" rel="stylesheet">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0d0f14; --bg2: #13161e; --bg3: #1a1e28;
-  --border: #2a2f3d; --text: #e2e8f0; --muted: #64748b;
-  --green: #22c55e; --red: #ef4444; --yellow: #f59e0b; --accent: #6366f1;
+  --bg: #181818; --bg2: #202020; --bg3: #2a2a2a;
+  --border: #333333; --text: #e8e8e8; --muted: #888888;
+  --teal: #2dd4bf; --teal2: #14b8a6; --teal3: #0d9488;
+  --orange: #fb923c; --orange2: #f97316; --orange3: #ea580c;
+  --up: #2dd4bf; --dn: #fb923c;
+  --accent: #2dd4bf;
 }
-html,body { height:100%; background:var(--bg); color:var(--text); font-family:'JetBrains Mono','Courier New',monospace; font-size:12px; overflow:hidden; }
+html,body { height:100%; background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:12px; overflow:hidden; }
 .app { display:flex; height:100vh; overflow:hidden; flex-direction:row-reverse; }
 .sidebar { width:280px; min-width:280px; background:var(--bg2); border-left:1px solid var(--border); display:flex; flex-direction:column; }
 .sidebar-header { padding:10px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
 .sidebar-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
 .filter-row { padding:6px 10px; border-bottom:1px solid var(--border); display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
-.filter-input { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:3px 7px; border-radius:4px; font-family:inherit; font-size:11px; width:100%; }
-.filter-input:focus { outline:none; border-color:var(--accent); }
+.filter-input { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:3px 7px; border-radius:4px; font-family:'IBM Plex Sans',sans-serif; font-size:11px; width:100%; }
+.filter-input:focus { outline:none; border-color:var(--teal); }
 .range-inputs { display:flex; gap:4px; width:100%; }
-.range-input { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:3px 6px; border-radius:4px; font-family:inherit; font-size:11px; width:50%; }
-.range-input:focus { outline:none; border-color:var(--accent); }
+.range-input { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:3px 6px; border-radius:4px; font-family:'IBM Plex Sans',sans-serif; font-size:11px; width:50%; }
+.range-input:focus { outline:none; border-color:var(--teal); }
 .range-input::placeholder { color:var(--muted); }
-.col-header { display:grid; grid-template-columns:1fr 55px 55px 65px; padding:5px 10px; border-bottom:1px solid var(--border); color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
+.col-header { display:grid; grid-template-columns:1fr 48px 48px 60px; padding:5px 10px; border-bottom:1px solid var(--border); color:var(--muted); font-size:10px; }
 .col-header span { cursor:pointer; user-select:none; }
 .col-header span:hover { color:var(--text); }
 .coin-list { flex:1; overflow-y:auto; }
 .coin-list::-webkit-scrollbar { width:3px; }
 .coin-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-.coin-row { display:grid; grid-template-columns:1fr 55px 55px 65px; padding:5px 10px; border-bottom:1px solid #1a1e2833; cursor:pointer; transition:background .1s; align-items:center; }
+.coin-row { display:grid; grid-template-columns:1fr 48px 48px 60px; padding:5px 10px; border-bottom:1px solid #33333322; cursor:pointer; transition:background .1s; align-items:center; }
 .coin-row:hover { background:var(--bg3); }
-.coin-row.selected { background:#6366f118; border-left:2px solid var(--accent); }
+.coin-row.selected { background:#2dd4bf12; border-left:2px solid var(--teal); }
 .coin-name { font-size:12px; font-weight:600; }
 .coin-exch { font-size:9px; color:var(--muted); margin-top:1px; }
 .val { text-align:right; font-size:11px; }
-.up { color:var(--green); } .dn { color:var(--red); } .muted { color:var(--muted); }
-.natr-badge { font-size:9px; padding:1px 4px; border-radius:3px; background:#f59e0b18; color:var(--yellow); border:1px solid #f59e0b33; }
+.up { color:var(--up); } .dn { color:var(--dn); } .muted { color:var(--muted); }
+.natr-badge { font-size:9px; padding:1px 4px; border-radius:3px; background:#2dd4bf15; color:var(--teal); border:1px solid #2dd4bf30; }
 .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
 .toolbar { background:var(--bg2); border-bottom:1px solid var(--border); padding:6px 10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .tb-sep { width:1px; height:16px; background:var(--border); margin:0 2px; }
 .tb-label { font-size:10px; color:var(--muted); white-space:nowrap; }
-.btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 9px; border-radius:4px; cursor:pointer; font-size:11px; font-family:inherit; transition:all .15s; white-space:nowrap; }
-.btn:hover { border-color:var(--accent); color:var(--text); }
-.btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
-.btn-by { color:#f7931a; border-color:#f7931a33; }
-.btn-by.active { background:#f7931a18; border-color:#f7931a; color:#f7931a; }
-.btn-ok { color:#1a78ff; border-color:#1a78ff33; }
-.btn-ok.active { background:#1a78ff18; border-color:#1a78ff; color:#1a78ff; }
+.btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 9px; border-radius:4px; cursor:pointer; font-size:11px; font-family:'IBM Plex Sans',sans-serif; transition:all .15s; white-space:nowrap; }
+.btn:hover { border-color:var(--teal); color:var(--text); }
+.btn.active { background:#2dd4bf22; border-color:var(--teal); color:var(--teal); }
 .btn-bi { color:#f0b90b; border-color:#f0b90b33; }
 .btn-bi.active { background:#f0b90b18; border-color:#f0b90b; color:#f0b90b; }
-.tb-filter { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:3px 7px; border-radius:4px; font-family:inherit; font-size:11px; width:70px; }
-.tb-filter:focus { outline:none; border-color:var(--accent); }
+.btn-ok { color:#a78bfa; border-color:#a78bfa33; }
+.btn-ok.active { background:#a78bfa18; border-color:#a78bfa; color:#a78bfa; }
+.btn-by { color:#fb923c; border-color:#fb923c33; }
+.btn-by.active { background:#fb923c18; border-color:#fb923c; color:#fb923c; }
+.tb-filter { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:3px 7px; border-radius:4px; font-family:'IBM Plex Sans',sans-serif; font-size:11px; width:70px; }
+.tb-filter:focus { outline:none; border-color:var(--teal); }
 .tb-filter::placeholder { color:var(--muted); }
 .charts-area { flex:1; overflow:hidden; padding:6px; display:grid; gap:6px; }
 .chart-card { background:var(--bg2); border:1px solid var(--border); border-radius:6px; display:flex; flex-direction:column; overflow:hidden; cursor:pointer; transition:border-color .2s; }
-.chart-card:hover { border-color:#6366f166; }
+.chart-card:hover { border-color:#2dd4bf44; }
 .chart-header { padding:5px 8px; border-bottom:1px solid var(--border); }
 .chart-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
 .chart-ticker { font-size:13px; font-weight:700; }
 .chart-indicators { display:flex; gap:4px; flex-wrap:wrap; }
-.ind { font-size:9px; padding:1px 5px; border-radius:3px; white-space:nowrap; }
-.ind-green { background:#22c55e18; color:#22c55e; border:1px solid #22c55e33; }
-.ind-red { background:#ef444418; color:#ef4444; border:1px solid #ef444433; }
-.ind-yellow { background:#f59e0b18; color:#f59e0b; border:1px solid #f59e0b33; }
-.ind-blue { background:#3b82f618; color:#3b82f6; border:1px solid #3b82f633; }
-.ind-gray { background:#64748b18; color:#94a3b8; border:1px solid #64748b33; }
-.ind-purple { background:#6366f118; color:#a5b4fc; border:1px solid #6366f133; }
+.ind { font-size:9px; padding:1px 5px; border-radius:3px; white-space:nowrap; display:inline-flex; align-items:center; gap:2px; }
+.ind-up { background:#2dd4bf12; color:var(--teal); border:1px solid #2dd4bf30; }
+.ind-dn { background:#fb923c12; color:var(--orange); border:1px solid #fb923c30; }
+.ind-teal { background:#2dd4bf12; color:var(--teal); border:1px solid #2dd4bf30; }
+.ind-orange { background:#fb923c12; color:var(--orange); border:1px solid #fb923c30; }
+.ind-gray { background:#88888812; color:#aaaaaa; border:1px solid #88888830; }
+.ind-vol { background:#a78bfa12; color:#a78bfa; border:1px solid #a78bfa30; }
 .chart-body { flex:1; position:relative; min-height:0; }
 .fs-toolbar { padding:6px 10px; border-bottom:1px solid var(--border); background:var(--bg2); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.tool-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:inherit; transition:all .15s; display:flex; align-items:center; gap:4px; }
-.tool-btn:hover { border-color:var(--accent); color:var(--text); }
-.tool-btn.active { background:#6366f122; border-color:var(--accent); color:var(--accent); }
-.tool-btn.danger:hover { border-color:var(--red); color:var(--red); }
-.fullscreen-overlay { display:none; position:fixed; inset:0; background:#0d0f1488; z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+.tool-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:'IBM Plex Sans',sans-serif; transition:all .15s; display:flex; align-items:center; gap:4px; }
+.tool-btn:hover { border-color:var(--teal); color:var(--text); }
+.tool-btn.active { background:#2dd4bf18; border-color:var(--teal); color:var(--teal); }
+.tool-btn.danger:hover { border-color:var(--orange); color:var(--orange); }
+.fullscreen-overlay { display:none; position:fixed; inset:0; background:#18181888; z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
 .fullscreen-overlay.open { display:flex; }
-.fs-popup { width:calc(100vw - 80px); height:calc(100vh - 80px); background:var(--bg2); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 24px 80px #00000088; }
+.fs-popup { width:calc(100vw - 80px); height:calc(100vh - 80px); background:var(--bg2); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 24px 80px #00000099; }
 .fs-header { padding:8px 14px; border-bottom:1px solid var(--border); background:var(--bg2); display:flex; align-items:center; justify-content:space-between; border-radius:10px 10px 0 0; }
 .fs-indicators { display:flex; gap:5px; flex-wrap:wrap; padding:6px 10px; border-bottom:1px solid var(--border); background:var(--bg2); }
 .fs-body { flex:1; min-height:0; }
-.close-btn { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:4px 12px; border-radius:4px; cursor:pointer; font-family:inherit; font-size:12px; }
-.close-btn:hover { border-color:var(--red); color:var(--red); }
+.close-btn { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:4px 12px; border-radius:4px; cursor:pointer; font-family:'IBM Plex Sans',sans-serif; font-size:12px; }
+.close-btn:hover { border-color:var(--orange); color:var(--orange); }
 .status-bar { padding:3px 12px; background:var(--bg2); border-top:1px solid var(--border); font-size:10px; color:var(--muted); display:flex; gap:16px; align-items:center; }
-.dot { width:6px; height:6px; border-radius:50%; background:var(--green); display:inline-block; margin-right:4px; animation:pulse 2s infinite; }
-.dot.red { background:var(--red); }
+.dot { width:6px; height:6px; border-radius:50%; background:var(--teal); display:inline-block; margin-right:4px; animation:pulse 2s infinite; }
+.dot.red { background:var(--orange); }
 @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
 .flash-up { animation: flashUp 0.5s ease; }
 .flash-dn { animation: flashDn 0.5s ease; }
-@keyframes flashUp { 0%{background:#22c55e33} 100%{background:transparent} }
-@keyframes flashDn { 0%{background:#ef444433} 100%{background:transparent} }
+@keyframes flashUp { 0%{background:#2dd4bf22} 100%{background:transparent} }
+@keyframes flashDn { 0%{background:#fb923c22} 100%{background:transparent} }
 </style>
 </head>
 <body>
@@ -125,9 +130,9 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'J
     </div>
     <div class="col-header">
       <span onclick="setSort('symbol')">Тикер <span id="sort-symbol"></span></span>
-      <span onclick="setSort('change')" style="text-align:right">ИЗМ <span id="sort-change"></span></span>
-      <span onclick="setSort('natr')" style="text-align:right">NATR <span id="sort-natr"></span></span>
-      <span onclick="setSort('volume')" style="text-align:right">ОБЪ <span id="sort-volume">▼</span></span>
+      <span onclick="setSort('change')" style="text-align:right" title="Изменение цены"><i class="ti ti-percent" style="font-size:11px"></i> <span id="sort-change"></span></span>
+      <span onclick="setSort('natr')" style="text-align:right" title="NATR волатильность"><i class="ti ti-activity" style="font-size:11px"></i> <span id="sort-natr">▼</span></span>
+      <span onclick="setSort('volume')" style="text-align:right" title="Объём 24h"><i class="ti ti-chart-bar" style="font-size:11px"></i> <span id="sort-volume"></span></span>
     </div>
     <div class="coin-list" id="coin-list"></div>
   </div>
@@ -135,9 +140,9 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'J
   <div class="main">
     <div class="toolbar">
       <span class="tb-label">БИРЖА:</span>
-      <button class="btn btn-by active" id="ex-BY" onclick="setExchange('BY')">BY-F</button>
+      <button class="btn btn-bi active" id="ex-BI" onclick="setExchange('BI')">BI-F</button>
       <button class="btn btn-ok" id="ex-OK" onclick="setExchange('OK')">OK-F</button>
-      <button class="btn btn-bi" id="ex-BI" onclick="setExchange('BI')">BI-F</button>
+      <button class="btn btn-by" id="ex-BY" onclick="setExchange('BY')">BY-F</button>
       <div class="tb-sep"></div>
       <span class="tb-label">ТФ:</span>
       <button class="btn active" id="tf-1m" onclick="setTf('1m')">1м</button>
@@ -190,14 +195,14 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'J
     <button class="tool-btn" id="fs-tf-1w" onclick="setFsTf('1w')">1н</button>
     <div class="tb-sep"></div>
     <span class="tb-label">ИНСТР:</span>
-    <button class="tool-btn" id="tool-none" onclick="setTool('none')">✦ Курсор</button>
-    <button class="tool-btn" id="tool-hline" onclick="setTool('hline')">— Уровень</button>
-    <button class="tool-btn" id="tool-ray" onclick="setTool('ray')">↗ Луч</button>
-    <button class="tool-btn" id="tool-segment" onclick="setTool('segment')">╱ Сегмент</button>
-    <button class="tool-btn" id="tool-channel" onclick="setTool('channel')">⫴ Канал</button>
-    <button class="tool-btn" id="tool-ruler" onclick="setTool('ruler')">📐 Линейка</button>
+    <button class="tool-btn" id="tool-none" onclick="setTool('none')"><i class="ti ti-pointer"></i> Курсор</button>
+    <button class="tool-btn" id="tool-hline" onclick="setTool('hline')"><i class="ti ti-minus"></i> Уровень</button>
+    <button class="tool-btn" id="tool-ray" onclick="setTool('ray')"><i class="ti ti-arrow-up-right"></i> Луч</button>
+    <button class="tool-btn" id="tool-segment" onclick="setTool('segment')"><i class="ti ti-line"></i> Сегмент</button>
+    <button class="tool-btn" id="tool-channel" onclick="setTool('channel')"><i class="ti ti-layout-rows"></i> Канал</button>
+    <button class="tool-btn" id="tool-ruler" onclick="setTool('ruler')"><i class="ti ti-ruler"></i> Линейка</button>
     <div class="tb-sep"></div>
-    <button class="tool-btn danger" onclick="clearDrawings()">🗑 Очистить</button>
+    <button class="tool-btn danger" onclick="clearDrawings()"><i class="ti ti-trash"></i> Очистить</button>
   </div>
   <div class="fs-body" id="fs-body"></div>
   </div>
@@ -229,7 +234,7 @@ function okxTf(tf) { return {'1m':'1m','5m':'5m','15m':'15m','1h':'1H','4h':'4H'
 let allCoins=[], filteredCoins=[], selectedCoins=[];
 let currentTf='1m', gridCols=3, gridRows=3;
 let sortKey='natr', sortDir=-1, searchQ='';
-let currentExchange='BY';
+let currentExchange='BI';
 let chartInstances={};
 let fsChart=null, fsSymbol=null, fsTf='1m';
 let activeTool='none';
@@ -573,32 +578,36 @@ function selectCoin(symbol) {
 // ── INDICATORS ────────────────────────────────────────────────────────
 function buildIndicators(coin, full=false) {
   if (!coin) return '';
-  const cls=coin.change>=0?'ind-green':'ind-red';
+  const cls=coin.change>=0?'ind-up':'ind-dn';
   const range=coin.price>0?((coin.high-coin.low)/coin.price*100).toFixed(2):0;
   const trades=coin.trades>=1000?(coin.trades/1000).toFixed(0)+'K':coin.trades||'—';
   let html=`<span class="ind ${cls}">${coin.change>=0?'+':''}${coin.change.toFixed(2)}%</span>
-    <span class="ind ind-yellow">Ренж ${range}%</span>
-    <span class="ind ind-yellow">NATR ${coin.natr.toFixed(2)}%</span>
-    <span class="ind ind-blue">Сделок ${trades}</span>
-    <span class="ind ind-gray">Объём ${fmtVol(coin.volume)}</span>`;
-  if (full) html+=`<span class="ind ind-purple">H ${fmtPrice(coin.high)}</span><span class="ind ind-purple">L ${fmtPrice(coin.low)}</span>`;
+    <span class="ind ind-teal" title="Ренж цены"><i class="ti ti-arrows-horizontal"></i> ${range}%</span>
+    <span class="ind ind-teal" title="NATR — волатильность"><i class="ti ti-activity"></i> ${coin.natr.toFixed(2)}%</span>
+    <span class="ind ind-gray" title="Сделок"><i class="ti ti-bolt"></i> ${trades}</span>
+    <span class="ind ind-vol" title="Объём 24h"><i class="ti ti-chart-bar"></i> ${fmtVol(coin.volume)}</span>`;
+  if (full) html+=`<span class="ind ind-gray"><i class="ti ti-arrow-up"></i> ${fmtPrice(coin.high)}</span><span class="ind ind-gray"><i class="ti ti-arrow-down"></i> ${fmtPrice(coin.low)}</span>`;
   return html;
 }
 
 // ── CHART SETUP ───────────────────────────────────────────────────────
 function makeChartOpts(w,h) {
   return { width:w, height:h,
-    layout:{ background:{color:'#13161e'}, textColor:'#64748b' },
-    grid:{ vertLines:{color:'#1a1e28'}, horzLines:{color:'#1a1e28'} },
+    layout:{ background:{color:'#202020'}, textColor:'#888888' },
+    grid:{ vertLines:{color:'#2a2a2a'}, horzLines:{color:'#2a2a2a'} },
     crosshair:{ mode:LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale:{ borderColor:'#2a2f3d', scaleMargins:{top:0.05,bottom:0.2} },
-    timeScale:{ borderColor:'#2a2f3d', timeVisible:true, secondsVisible:false },
+    rightPriceScale:{ borderColor:'#333333', scaleMargins:{top:0.05,bottom:0.2} },
+    timeScale:{ borderColor:'#333333', timeVisible:true, secondsVisible:false },
     handleScroll:true, handleScale:true };
 }
 
 function setupChart(container, w, h) {
   const chart = LightweightCharts.createChart(container, makeChartOpts(w,h));
-  const candles = chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderUpColor:'#22c55e', borderDownColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
+  const candles = chart.addCandlestickSeries({
+    upColor:'#2dd4bf', downColor:'#fb923c',
+    borderUpColor:'#2dd4bf', borderDownColor:'#fb923c',
+    wickUpColor:'#2dd4bf', wickDownColor:'#fb923c'
+  });
   const volume = chart.addHistogramSeries({ priceFormat:{type:'volume'}, priceScaleId:'vol' });
   chart.priceScale('vol').applyOptions({ scaleMargins:{top:0.85,bottom:0} });
   return { chart, candles, volume };
@@ -607,7 +616,7 @@ function setupChart(container, w, h) {
 function setKlines(inst, klines) {
   if (!klines.length) return;
   inst.candles.setData(klines);
-  inst.volume.setData(klines.map(k=>({ time:k.time, value:k.volume, color:k.close>=k.open?'#22c55e33':'#ef444433' })));
+  inst.volume.setData(klines.map(k=>({ time:k.time, value:k.volume, color:k.close>=k.open?'#2dd4bf33':'#fb923c33' })));
   inst.chart.timeScale().fitContent();
 }
 
