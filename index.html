@@ -18,7 +18,7 @@
   --ind-range: #818cf8;  /* ренж цены — индиго */
   --ind-natr: #2dd4bf;   /* NATR = тeal (совпадает с сорт-кнопкой NATR) */
   --ind-trades: #f59e0b; /* сделки — янтарь */
-  --ind-vol: #a78bfa;    /* объём — фиолет (совпадает с сорт-кнопкой ОБЪ) */
+  --ind-vol: #38bdf8;    /* объём — голубой, отличается от фиолета */
 }
 html,body { height:100%; background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:12px; overflow:hidden; }
 .app { display:flex; height:100vh; overflow:hidden; flex-direction:row-reverse; }
@@ -65,16 +65,16 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'I
 .charts-area { flex:1; overflow:hidden; padding:6px; display:grid; gap:6px; }
 .chart-card { background:var(--bg2); border:1px solid var(--border); border-radius:6px; display:flex; flex-direction:column; overflow:hidden; cursor:pointer; transition:border-color .2s; }
 .chart-card:hover { border-color:#2dd4bf44; }
-.chart-header { padding:5px 8px; border-bottom:1px solid var(--border); }
-.chart-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
-.chart-ticker { font-size:13px; font-weight:700; }
-.chart-indicators { display:flex; gap:4px; flex-wrap:wrap; }
+.chart-header { padding:4px 8px; border-bottom:1px solid var(--border); }
+.chart-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.chart-ticker { font-size:12px; font-weight:700; white-space:nowrap; flex-shrink:0; }
+.chart-indicators { display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-end; }
 .ind { font-size:9px; padding:1px 5px; border-radius:3px; white-space:nowrap; display:inline-flex; align-items:center; gap:2px; }
 .ind-change { background:#2dd4bf12; color:var(--ind-change); border:1px solid #2dd4bf30; }
 .ind-range  { background:#818cf812; color:var(--ind-range);  border:1px solid #818cf830; }
 .ind-natr   { background:#2dd4bf12; color:var(--ind-natr);   border:1px solid #2dd4bf30; }
 .ind-trades { background:#f59e0b12; color:var(--ind-trades); border:1px solid #f59e0b30; }
-.ind-vol    { background:#a78bfa12; color:var(--ind-vol);    border:1px solid #a78bfa30; }
+.ind-vol    { background:#38bdf812; color:var(--ind-vol);    border:1px solid #38bdf830; }
 .chart-body { flex:1; position:relative; min-height:0; }
 .fs-toolbar { padding:6px 10px; border-bottom:1px solid var(--border); background:var(--bg2); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .tool-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:'IBM Plex Sans',sans-serif; transition:all .15s; display:flex; align-items:center; gap:4px; }
@@ -171,6 +171,7 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'I
       <button class="btn active" id="sort-btn-natr" onclick="setSort('natr')">NATR ↓</button>
       <button class="btn" id="sort-btn-volume" onclick="setSort('volume')">ОБЪ ↓</button>
       <button class="btn" id="sort-btn-change" onclick="setSort('change')">ИЗМ ↓</button>
+      <button class="btn" id="sort-btn-trades" onclick="setSort('trades')">СДЕЛОК ↓</button>
     </div>
     <div class="charts-area" id="charts-area"></div>
     <div class="status-bar">
@@ -261,7 +262,11 @@ function fmtPrice(p) {
   if (!p) return '0';
   return p<0.0001?p.toFixed(8):p<0.01?p.toFixed(6):p<1?p.toFixed(4):p<100?p.toFixed(3):p.toFixed(2);
 }
-function fmtVol(v) { return v>=1000?(v/1000).toFixed(1)+'B':v.toFixed(0)+'M'; }
+function fmtVol(v) {
+  if (v>=1000) return (v/1000).toFixed(1)+'B';
+  if (v>=1) return v.toFixed(1)+'M';
+  return (v*1000).toFixed(0)+'K';
+}
 function getNum(id) { const v=parseFloat(document.getElementById(id)?.value); return isNaN(v)?null:v; }
 
 // Cloudflare Worker proxy — свой сервер, работает со всеми биржами
@@ -444,7 +449,12 @@ function connectWebSocket() {
 
   // Binance: combined stream — все тикеры в одном подключении
   let wsUrl = exc.wsUrl;
-  if (currentExchange==='BI' && allCoins.length>0) {
+  if (currentExchange==='BI') {
+    if (!allCoins.length) {
+      // coins not loaded yet — retry after short delay
+      wsReconnectTimer = setTimeout(connectWebSocket, 500);
+      return;
+    }
     const streams = allCoins.slice(0,200).map(c=>`${c.symbol.toLowerCase()}usdt@miniTicker`).join('/');
     wsUrl = `wss://fstream.binance.com/stream?streams=${streams}`;
   }
@@ -626,10 +636,10 @@ function applyFilters() {
 function setSort(key) {
   if (sortKey===key) sortDir*=-1; else { sortKey=key; sortDir=-1; }
   ['symbol','change','natr','volume'].forEach(k=>{ const el=document.getElementById('sort-'+k); if(el) el.textContent=k===sortKey?(sortDir<0?'↓':'↑'):''; });
-  ['volume','natr','change'].forEach(k=>{
+  ['volume','natr','change','trades'].forEach(k=>{
     const btn=document.getElementById('sort-btn-'+k);
     if (!btn) return;
-    const labels={'volume':'ОБЪ','natr':'NATR','change':'ИЗМ'};
+    const labels={'volume':'ОБЪ','natr':'NATR','change':'ИЗМ','trades':'СДЕЛОК'};
     btn.textContent = labels[k]+(k===sortKey?(sortDir<0?' ↓':' ↑'):'  ↓');
     btn.classList.toggle('active', k===sortKey);
   });
@@ -791,8 +801,8 @@ async function renderCharts() {
       <div class="chart-header">
         <div class="chart-top">
           <span class="chart-ticker">${sym} <span style="font-size:9px;color:var(--muted);font-weight:400">${coin.exchange||''} · ${currentTf}</span></span>
+          <div class="chart-indicators" id="inds-${sym}">${buildIndicators(coin)}</div>
         </div>
-        <div class="chart-indicators" id="inds-${sym}">${buildIndicators(coin)}</div>
       </div>
       <div class="chart-body" id="body-${sym}"></div>
     </div>`;
