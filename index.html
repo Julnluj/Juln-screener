@@ -488,7 +488,8 @@ function applyFilters() {
   if (natrMax!=null) coins=coins.filter(c=>c.natr<=natrMax);
   if (chgMin!=null) coins=coins.filter(c=>c.change>=chgMin);
   if (chgMax!=null) coins=coins.filter(c=>c.change<=chgMax);
-  coins.sort((a,b)=>{ const av=a[sortKey],bv=b[sortKey]; return typeof av==='string'?sortDir*av.localeCompare(bv):sortDir*(bv-av); });
+  // sortDir=-1 = по убыванию (наибольшее первым), sortDir=1 = по возрастанию
+  coins.sort((a,b)=>{ const av=a[sortKey],bv=b[sortKey]; return typeof av==='string'?sortDir*av.localeCompare(bv):sortDir*(av-bv); });
   filteredCoins=coins;
   document.getElementById('coin-count').textContent=coins.length;
   renderList();
@@ -500,16 +501,16 @@ function applyFilters() {
 
 function setSort(key) {
   if (sortKey===key) sortDir*=-1; else { sortKey=key; sortDir=-1; }
-  ['symbol','change','natr','volume'].forEach(k=>{ const el=document.getElementById('sort-'+k); if(el) el.textContent=k===sortKey?(sortDir>0?'▲':'▼'):''; });
+  ['symbol','change','natr','volume'].forEach(k=>{ const el=document.getElementById('sort-'+k); if(el) el.textContent=k===sortKey?(sortDir<0?'↓':'↑'):''; });
   ['volume','natr','change'].forEach(k=>{
     const btn=document.getElementById('sort-btn-'+k);
     if (!btn) return;
     const labels={'volume':'ОБЪ','natr':'NATR','change':'ИЗМ'};
-    btn.textContent = labels[k]+(k===sortKey?(sortDir>0?' ↑':' ↓'):'  ↓');
+    btn.textContent = labels[k]+(k===sortKey?(sortDir<0?' ↓':' ↑'):'  ↓');
     btn.classList.toggle('active', k===sortKey);
   });
   // пересортировать и перерисовать графики
-  filteredCoins.sort((a,b)=>{ const av=a[sortKey],bv=b[sortKey]; return typeof av==='string'?sortDir*av.localeCompare(bv):sortDir*(bv-av); });
+  filteredCoins.sort((a,b)=>{ const av=a[sortKey],bv=b[sortKey]; return typeof av==='string'?sortDir*av.localeCompare(bv):sortDir*(av-bv); });
   const maxSlots=gridCols*gridRows;
   selectedCoins=filteredCoins.slice(0,maxSlots).map(c=>c.symbol);
   renderList();
@@ -581,7 +582,7 @@ function buildIndicators(coin, full=false) {
   const cls=coin.change>=0?'ind-up':'ind-dn';
   const range=coin.price>0?((coin.high-coin.low)/coin.price*100).toFixed(2):0;
   const trades=coin.trades>=1000?(coin.trades/1000).toFixed(0)+'K':coin.trades||'—';
-  let html=`<span class="ind ${cls}">${coin.change>=0?'+':''}${coin.change.toFixed(2)}%</span>
+  let html=`<span class="ind ${cls}" title="Изменение цены"><i class="ti ti-trending-up"></i> ${coin.change>=0?'+':''}${coin.change.toFixed(2)}%</span>
     <span class="ind ind-teal" title="Ренж цены"><i class="ti ti-arrows-horizontal"></i> ${range}%</span>
     <span class="ind ind-teal" title="NATR — волатильность"><i class="ti ti-activity"></i> ${coin.natr.toFixed(2)}%</span>
     <span class="ind ind-gray" title="Сделок"><i class="ti ti-bolt"></i> ${trades}</span>
@@ -684,6 +685,8 @@ async function renderCharts() {
     const inst = setupChart(bodyEl, bodyEl.clientWidth||300, bodyEl.clientHeight||120);
     chartInstances[sym]=inst;
     cardEl.addEventListener('dblclick', ()=>openFullscreen(sym));
+    // small delay between requests to avoid rate limiting
+    await new Promise(r=>setTimeout(r, 80));
     fetchKlines(sym, currentTf).then(klines=>setKlines(inst, klines));
   }
 }
