@@ -69,7 +69,7 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'I
 .chart-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
 .chart-ticker { font-size:12px; font-weight:700; white-space:nowrap; flex-shrink:0; }
 .chart-indicators { display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-end; }
-.ind { font-size:9px; padding:1px 5px; border-radius:3px; white-space:nowrap; display:inline-flex; align-items:center; gap:2px; }
+.ind { font-size:11px; padding:2px 6px; border-radius:3px; white-space:nowrap; display:inline-flex; align-items:center; gap:3px; }
 .ind-change { background:#2dd4bf12; color:var(--ind-change); border:1px solid #2dd4bf30; }
 .ind-range  { background:#818cf812; color:var(--ind-range);  border:1px solid #818cf830; }
 .ind-natr   { background:#2dd4bf12; color:var(--ind-natr);   border:1px solid #2dd4bf30; }
@@ -93,10 +93,6 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'I
 .dot { width:6px; height:6px; border-radius:50%; background:var(--teal); display:inline-block; margin-right:4px; animation:pulse 2s infinite; }
 .dot.red { background:var(--orange); }
 @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
-.flash-up { animation: flashUp 0.5s ease; }
-.flash-dn { animation: flashDn 0.5s ease; }
-@keyframes flashUp { 0%{background:#2dd4bf22} 100%{background:transparent} }
-@keyframes flashDn { 0%{background:#fb923c22} 100%{background:transparent} }
 </style>
 </head>
 <body>
@@ -283,12 +279,13 @@ async function fetchBinanceTickers() {
   const j = await proxyFetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
   return (Array.isArray(j)?j:[]).filter(d=>d.symbol.endsWith('USDT')).map(d=>{
     const price=+d.lastPrice, high=+d.highPrice, low=+d.lowPrice;
-    const natr = price>0?(high-low)/price*100:0;
+    const range24h = price>0?(high-low)/price*100:0;
     return {
       symbol: d.symbol.replace('USDT',''),
       price, change:+d.priceChangePercent,
       volume:+d.quoteVolume/1e6,
-      natr:+natr.toFixed(2),
+      natr:+range24h.toFixed(2), // будет заменён ATR позже
+      range24h:+range24h.toFixed(2), // всегда 24h диапазон
       trades:+d.count||0,
       high, low, exchange:'BI-F'
     };
@@ -308,12 +305,13 @@ async function fetchBybitTickers() {
     .filter(d=>d.symbol.endsWith('USDT') && d.lastPrice>0)
     .map(d=>{
       const price=+d.lastPrice, high=+d.highPrice24h, low=+d.lowPrice24h;
-      const natr = price>0?(high-low)/price*100:0;
+      const range24h = price>0?(high-low)/price*100:0;
       return {
         symbol: d.symbol.replace('USDT',''),
         price, change:+d.price24hPcnt*100,
         volume:+d.turnover24h/1e6,
-        natr:+natr.toFixed(2),
+        natr:+range24h.toFixed(2),
+        range24h:+range24h.toFixed(2),
         trades:+d.count||0,
         high, low, exchange:'BY-F'
       };
@@ -321,21 +319,23 @@ async function fetchBybitTickers() {
 }
 
 async function fetchOkxTickers() {
-  // OKX allows CORS directly from browser — no proxy needed
   const r = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP');
   const j = await r.json();
   return (j.data||[])
     .filter(d=>d.instId.endsWith('-USDT-SWAP'))
     .map(d=>{
       const price=+d.last, open24h=+d.open24h, high=+d.high24h, low=+d.low24h;
-      const natr = price>0?(high-low)/price*100:0;
+      const range24h = price>0?(high-low)/price*100:0;
       const change = open24h>0 ? (price-open24h)/open24h*100 : 0;
+      const volUsdt = +d.volCcy24h;
+      const volume = volUsdt > 1000 ? volUsdt/1e6 : +d.vol24h*price/1e6;
       return {
         symbol: d.instId.replace('-USDT-SWAP',''),
         price, change:+change.toFixed(2),
-        volume:+d.volCcy24h>0?+d.volCcy24h:+d.vol24h*price/1e6,
-        natr:+natr.toFixed(2),
-        trades:0,
+        volume: +volume.toFixed(2),
+        natr:+range24h.toFixed(2),
+        range24h:+range24h.toFixed(2),
+        trades: +d.count||0,
         high, low, exchange:'OK-F'
       };
     });
@@ -375,6 +375,7 @@ async function refreshATR() {
         const atr = calcATR(klines, 14);
         if (atr && coin.price>0) {
           coin.natr = +(atr/coin.price*100).toFixed(2);
+          // range24h stays as 24h high-low range, natr is now ATR-based
         }
       } catch(e){}
     }));
@@ -714,11 +715,11 @@ function selectCoin(symbol) {
 function buildIndicators(coin, full=false) {
   if (!coin) return '';
   const chgCls = coin.change>=0 ? 'ind-up' : 'ind-dn';
-  const range=coin.price>0?((coin.high-coin.low)/coin.price*100).toFixed(2):0;
+  const range = (coin.range24h||coin.natr||0).toFixed(2);
   const trades=coin.trades>=1e6?(coin.trades/1e6).toFixed(1)+'M':coin.trades>=1000?(coin.trades/1000).toFixed(0)+'K':coin.trades||'—';
   let html=`<span class="ind ${chgCls}" title="Изменение цены"><i class="ti ti-trending-up"></i> ${coin.change>=0?'+':''}${coin.change.toFixed(2)}%</span>
-    <span class="ind ind-range" title="Ренж цены"><i class="ti ti-arrows-horizontal"></i> ${range}%</span>
-    <span class="ind ind-natr" title="NATR — волатильность"><i class="ti ti-activity"></i> ${coin.natr.toFixed(2)}%</span>
+    <span class="ind ind-range" title="Ренж цены за 24h"><i class="ti ti-arrows-horizontal"></i> ${range}%</span>
+    <span class="ind ind-natr" title="NATR — ATR волатильность на ${currentTf}"><i class="ti ti-activity"></i> ${coin.natr.toFixed(2)}%</span>
     <span class="ind ind-trades" title="Сделок за 24h"><i class="ti ti-bolt"></i> ${trades}</span>
     <span class="ind ind-vol" title="Объём 24h"><i class="ti ti-chart-bar"></i> ${fmtVol(coin.volume)}</span>`;
   if (full) html+=`<span class="ind ind-range"><i class="ti ti-arrow-up"></i> ${fmtPrice(coin.high)}</span><span class="ind ind-range"><i class="ti ti-arrow-down"></i> ${fmtPrice(coin.low)}</span>`;
@@ -728,11 +729,11 @@ function buildIndicators(coin, full=false) {
 // ── CHART SETUP ───────────────────────────────────────────────────────
 function makeChartOpts(w,h) {
   return { width:w, height:h,
-    layout:{ background:{color:'#202020'}, textColor:'#888888' },
+    layout:{ background:{color:'#202020'}, textColor:'#888888', fontSize:10 },
     grid:{ vertLines:{color:'#2a2a2a'}, horzLines:{color:'#2a2a2a'} },
     crosshair:{ mode:LightweightCharts.CrosshairMode.Normal },
     rightPriceScale:{ borderColor:'#333333', scaleMargins:{top:0.05,bottom:0.2} },
-    timeScale:{ borderColor:'#333333', timeVisible:true, secondsVisible:false },
+    timeScale:{ borderColor:'#333333', timeVisible:true, secondsVisible:false, tickMarkFormatter: undefined },
     handleScroll:true, handleScale:true };
 }
 
@@ -762,13 +763,6 @@ function updateChartPrice(sym, price, change, prevPrice) {
   if (chgEl) {
     chgEl.textContent = (change>=0?'+':'')+change.toFixed(1)+'%';
     chgEl.className = 'val '+(change>=0?'up':'dn');
-  }
-  // flash row
-  const row = document.getElementById('row-'+sym);
-  if (row && prevPrice) {
-    row.classList.remove('flash-up','flash-dn');
-    void row.offsetWidth;
-    row.classList.add(price>=prevPrice?'flash-up':'flash-dn');
   }
   // update chart header
   const priceEl = document.getElementById('cprice-'+sym);
@@ -800,7 +794,7 @@ async function renderCharts() {
     return `<div class="chart-card" id="card-${sym}">
       <div class="chart-header">
         <div class="chart-top">
-          <span class="chart-ticker">${sym} <span style="font-size:9px;color:var(--muted);font-weight:400">${coin.exchange||''} · ${currentTf}</span></span>
+          <span class="chart-ticker">${sym}</span>
           <div class="chart-indicators" id="inds-${sym}">${buildIndicators(coin)}</div>
         </div>
       </div>
