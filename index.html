@@ -14,8 +14,11 @@
   --border: #333333; --text: #e8e8e8; --muted: #888888;
   --teal: #2dd4bf; --teal2: #14b8a6; --teal3: #0d9488;
   --orange: #fb923c; --orange2: #f97316; --orange3: #ea580c;
-  --up: #2dd4bf; --dn: #fb923c;
-  --accent: #2dd4bf;
+  --ind-change: #2dd4bf; /* изменение цены = тeal (совпадает с сорт-кнопкой ИЗМ) */
+  --ind-range: #818cf8;  /* ренж цены — индиго */
+  --ind-natr: #2dd4bf;   /* NATR = тeal (совпадает с сорт-кнопкой NATR) */
+  --ind-trades: #f59e0b; /* сделки — янтарь */
+  --ind-vol: #a78bfa;    /* объём — фиолет (совпадает с сорт-кнопкой ОБЪ) */
 }
 html,body { height:100%; background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:12px; overflow:hidden; }
 .app { display:flex; height:100vh; overflow:hidden; flex-direction:row-reverse; }
@@ -67,12 +70,11 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'I
 .chart-ticker { font-size:13px; font-weight:700; }
 .chart-indicators { display:flex; gap:4px; flex-wrap:wrap; }
 .ind { font-size:9px; padding:1px 5px; border-radius:3px; white-space:nowrap; display:inline-flex; align-items:center; gap:2px; }
-.ind-up { background:#2dd4bf12; color:var(--teal); border:1px solid #2dd4bf30; }
-.ind-dn { background:#fb923c12; color:var(--orange); border:1px solid #fb923c30; }
-.ind-teal { background:#2dd4bf12; color:var(--teal); border:1px solid #2dd4bf30; }
-.ind-orange { background:#fb923c12; color:var(--orange); border:1px solid #fb923c30; }
-.ind-gray { background:#88888812; color:#aaaaaa; border:1px solid #88888830; }
-.ind-vol { background:#a78bfa12; color:#a78bfa; border:1px solid #a78bfa30; }
+.ind-change { background:#2dd4bf12; color:var(--ind-change); border:1px solid #2dd4bf30; }
+.ind-range  { background:#818cf812; color:var(--ind-range);  border:1px solid #818cf830; }
+.ind-natr   { background:#2dd4bf12; color:var(--ind-natr);   border:1px solid #2dd4bf30; }
+.ind-trades { background:#f59e0b12; color:var(--ind-trades); border:1px solid #f59e0b30; }
+.ind-vol    { background:#a78bfa12; color:var(--ind-vol);    border:1px solid #a78bfa30; }
 .chart-body { flex:1; position:relative; min-height:0; }
 .fs-toolbar { padding:6px 10px; border-bottom:1px solid var(--border); background:var(--bg2); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .tool-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:'IBM Plex Sans',sans-serif; transition:all .15s; display:flex; align-items:center; gap:4px; }
@@ -108,24 +110,31 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:'I
       <input class="filter-input" id="search" placeholder="Поиск тикера..." />
     </div>
     <div class="filter-row">
-      <span style="font-size:10px;color:var(--muted);width:100%;margin-bottom:3px">Объём 24h (млн $):</span>
+      <span style="font-size:10px;color:var(--ind-vol);width:100%;margin-bottom:3px"><i class="ti ti-chart-bar"></i> Объём 24h (млн $):</span>
       <div class="range-inputs">
         <input class="range-input" id="vol-min" placeholder="от" type="number" min="0" oninput="applyFilters()"/>
         <input class="range-input" id="vol-max" placeholder="до" type="number" min="0" oninput="applyFilters()"/>
       </div>
     </div>
     <div class="filter-row">
-      <span style="font-size:10px;color:var(--muted);width:100%;margin-bottom:3px">NATR (%):</span>
+      <span style="font-size:10px;color:var(--ind-natr);width:100%;margin-bottom:3px"><i class="ti ti-activity"></i> NATR (%):</span>
       <div class="range-inputs">
         <input class="range-input" id="natr-min" placeholder="от" type="number" step="0.1" oninput="applyFilters()"/>
         <input class="range-input" id="natr-max" placeholder="до" type="number" step="0.1" oninput="applyFilters()"/>
       </div>
     </div>
     <div class="filter-row">
-      <span style="font-size:10px;color:var(--muted);width:100%;margin-bottom:3px">Изменение цены (%):</span>
+      <span style="font-size:10px;color:var(--ind-change);width:100%;margin-bottom:3px"><i class="ti ti-trending-up"></i> Изменение цены (%):</span>
       <div class="range-inputs">
         <input class="range-input" id="chg-min" placeholder="от" type="number" step="0.1" oninput="applyFilters()"/>
         <input class="range-input" id="chg-max" placeholder="до" type="number" step="0.1" oninput="applyFilters()"/>
+      </div>
+    </div>
+    <div class="filter-row">
+      <span style="font-size:10px;color:var(--ind-trades);width:100%;margin-bottom:3px"><i class="ti ti-bolt"></i> Сделок (мин):</span>
+      <div class="range-inputs">
+        <input class="range-input" id="trades-min" placeholder="от" type="number" min="0" oninput="applyFilters()"/>
+        <input class="range-input" id="trades-max" placeholder="до" type="number" min="0" oninput="applyFilters()"/>
       </div>
     </div>
     <div class="col-header">
@@ -307,7 +316,9 @@ async function fetchBybitTickers() {
 }
 
 async function fetchOkxTickers() {
-  const j = await proxyFetch(EXCHANGES.OK.restTickers);
+  // OKX allows CORS directly from browser — no proxy needed
+  const r = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP');
+  const j = await r.json();
   return (j.data||[])
     .filter(d=>d.instId.endsWith('-USDT-SWAP'))
     .map(d=>{
@@ -405,8 +416,10 @@ async function fetchBybitKlines(symbol, tf, limit=120) {
 }
 
 async function fetchOkxKlines(symbol, tf, limit=120) {
-  const url = EXCHANGES.OK.restKlines(symbol, tf, limit);
-  const j = await proxyFetch(url);
+  // OKX allows CORS directly from browser — no proxy needed
+  const url = `https://www.okx.com/api/v5/market/candles?instId=${symbol}-USDT-SWAP&bar=${okxTf(tf)}&limit=${limit}`;
+  const r = await fetch(url);
+  const j = await r.json();
   return (j.data||[]).reverse().map(k=>({
     time:+k[0]/1000, open:+k[1], high:+k[2], low:+k[3], close:+k[4], volume:+k[5]
   }));
@@ -590,12 +603,15 @@ function applyFilters() {
   const volMin=getNum('vol-min'), volMax=getNum('vol-max');
   const natrMin=getNum('natr-min'), natrMax=getNum('natr-max');
   const chgMin=getNum('chg-min'), chgMax=getNum('chg-max');
+  const tradesMin=getNum('trades-min'), tradesMax=getNum('trades-max');
   if (volMin!=null) coins=coins.filter(c=>c.volume>=volMin);
   if (volMax!=null) coins=coins.filter(c=>c.volume<=volMax);
   if (natrMin!=null) coins=coins.filter(c=>c.natr>=natrMin);
   if (natrMax!=null) coins=coins.filter(c=>c.natr<=natrMax);
   if (chgMin!=null) coins=coins.filter(c=>c.change>=chgMin);
   if (chgMax!=null) coins=coins.filter(c=>c.change<=chgMax);
+  if (tradesMin!=null) coins=coins.filter(c=>(c.trades||0)>=tradesMin);
+  if (tradesMax!=null) coins=coins.filter(c=>(c.trades||0)<=tradesMax);
   // sortDir=-1 = по убыванию (наибольшее первым), sortDir=1 = по возрастанию
   coins.sort((a,b)=>{ const av=a[sortKey],bv=b[sortKey]; return typeof av==='string'?sortDir*av.localeCompare(bv):sortDir*(av-bv); });
   filteredCoins=coins;
@@ -687,15 +703,15 @@ function selectCoin(symbol) {
 // ── INDICATORS ────────────────────────────────────────────────────────
 function buildIndicators(coin, full=false) {
   if (!coin) return '';
-  const cls=coin.change>=0?'ind-up':'ind-dn';
+  const chgCls = coin.change>=0 ? 'ind-up' : 'ind-dn';
   const range=coin.price>0?((coin.high-coin.low)/coin.price*100).toFixed(2):0;
-  const trades=coin.trades>=1000?(coin.trades/1000).toFixed(0)+'K':coin.trades||'—';
-  let html=`<span class="ind ${cls}" title="Изменение цены"><i class="ti ti-trending-up"></i> ${coin.change>=0?'+':''}${coin.change.toFixed(2)}%</span>
-    <span class="ind ind-teal" title="Ренж цены"><i class="ti ti-arrows-horizontal"></i> ${range}%</span>
-    <span class="ind ind-teal" title="NATR — волатильность"><i class="ti ti-activity"></i> ${coin.natr.toFixed(2)}%</span>
-    <span class="ind ind-gray" title="Сделок"><i class="ti ti-bolt"></i> ${trades}</span>
+  const trades=coin.trades>=1e6?(coin.trades/1e6).toFixed(1)+'M':coin.trades>=1000?(coin.trades/1000).toFixed(0)+'K':coin.trades||'—';
+  let html=`<span class="ind ${chgCls}" title="Изменение цены"><i class="ti ti-trending-up"></i> ${coin.change>=0?'+':''}${coin.change.toFixed(2)}%</span>
+    <span class="ind ind-range" title="Ренж цены"><i class="ti ti-arrows-horizontal"></i> ${range}%</span>
+    <span class="ind ind-natr" title="NATR — волатильность"><i class="ti ti-activity"></i> ${coin.natr.toFixed(2)}%</span>
+    <span class="ind ind-trades" title="Сделок за 24h"><i class="ti ti-bolt"></i> ${trades}</span>
     <span class="ind ind-vol" title="Объём 24h"><i class="ti ti-chart-bar"></i> ${fmtVol(coin.volume)}</span>`;
-  if (full) html+=`<span class="ind ind-gray"><i class="ti ti-arrow-up"></i> ${fmtPrice(coin.high)}</span><span class="ind ind-gray"><i class="ti ti-arrow-down"></i> ${fmtPrice(coin.low)}</span>`;
+  if (full) html+=`<span class="ind ind-range"><i class="ti ti-arrow-up"></i> ${fmtPrice(coin.high)}</span><span class="ind ind-range"><i class="ti ti-arrow-down"></i> ${fmtPrice(coin.low)}</span>`;
   return html;
 }
 
@@ -775,10 +791,6 @@ async function renderCharts() {
       <div class="chart-header">
         <div class="chart-top">
           <span class="chart-ticker">${sym} <span style="font-size:9px;color:var(--muted);font-weight:400">${coin.exchange||''} · ${currentTf}</span></span>
-          <div style="display:flex;align-items:center;gap:6px">
-            <span class="chart-price ${cls}" id="cprice-${sym}">$${fmtPrice(coin.price||0)}</span>
-            <span class="${cls} chart-chg" id="cchg-${sym}" style="font-size:11px">${(coin.change||0)>=0?'+':''}${(coin.change||0).toFixed(2)}%</span>
-          </div>
         </div>
         <div class="chart-indicators" id="inds-${sym}">${buildIndicators(coin)}</div>
       </div>
